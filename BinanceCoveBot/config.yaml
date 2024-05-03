@@ -1,0 +1,27 @@
+keywords:
+  order_type:
+    - Buy
+    - Sell
+  targets:
+    - targets
+    - target
+  between:
+    - Buy between
+    - Sell between
+    - Buy
+    - Sell
+  stop_loss:
+    - stop loss
+    - stoploss
+    - stop
+    - sl
+  leverage:
+    - leverage
+    - lvrg
+regex:
+  order_type: "\\b({target_word})\\b"
+  between: '({target_word})[^a-zA-Z]*([a-zA-Z])'
+  targets: '({target_word})[^a-zA-Z]*([a-zA-Z])'
+  stop_loss: '({target_word})[^a-zA-Z]*([a-zA-Z])'
+  leverage: "({target_word})[\\s:]*([\\d\\-x]+)"
+  currency_name: '\b([A-Z]{3,})\b'

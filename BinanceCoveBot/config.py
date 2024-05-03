@@ -1,0 +1,16 @@
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_ID = os.getenv('BINANCEBOT_TG_ID')
+API_HASH = os.getenv('BINANCEBOT_TG_HASH')
+PHONE_NUMBER = os.getenv('BINANCEBOT_TG_PHONE_NUMBER')
+CHANNEL_USERNAME = os.getenv('BINANCEBOT_TARGET_CHANNEL')
+BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
+BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET_KEY')
+
+MAX_NOTIONAL = 5
+PERCENT_FOR_ORDER = 5
+
