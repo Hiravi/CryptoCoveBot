@@ -1,4 +1,4 @@
-from decimal import Decimal
+
 from cove_signal import Signal
 
 

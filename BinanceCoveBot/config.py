@@ -1,4 +1,3 @@
-
 import os
 from dotenv import load_dotenv
 
@@ -13,4 +12,6 @@ BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET_KEY')
 
 MAX_NOTIONAL = 5
 PERCENT_FOR_ORDER = 5
-
+TARGETS_IN_USE = 3
+MIN_LEVERAGE = 3
+MAX_LEVERAGE = 5

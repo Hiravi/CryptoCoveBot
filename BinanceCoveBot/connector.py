@@ -45,6 +45,7 @@ def place_target_orders(client: Client, symbol, side, targets, quantity, precisi
                 price=target_price,
                 quantity=target_quantity if index < len(targets) - 1 else round(quantity - targeted_asset, 3),
             )
+
             placed_orders.append(order)
             targeted_asset += target_quantity
         except Exception as e:

@@ -2,6 +2,7 @@ import re
 import yaml
 from cove_signal import Signal
 from logging_config import logging
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ def parse_message(message):
     targets_match = targets_regex.search(message)
     targets = extract_numbers(targets_match.group()) if targets_match else None
 
+    if targets:
+        targets = targets[:cfg.TARGETS_IN_USE]
+
     stop_loss_match = stop_loss_regex.search(message)
     stop_loss = float(extract_numbers(stop_loss_match.group())[0]) if stop_loss_match else None
 
@@ -78,9 +82,11 @@ def parse_message(message):
     leverage_numbers = [int(num) for num in leverage_numbers] if leverage_numbers else None
     max_leverage = max(leverage_numbers) if leverage_numbers else None
     if max_leverage is None:
-        result_leverage = 1
+        result_leverage = cfg.MIN_LEVERAGE
     else:
-        result_leverage = max_leverage if max_leverage and max_leverage <= 5 else 5
+        if max_leverage < cfg.MIN_LEVERAGE:
+            max_leverage = cfg.MIN_LEVERAGE
+        result_leverage = max_leverage if max_leverage and max_leverage <= cfg.MAX_LEVERAGE else cfg.MAX_LEVERAGE
 
     return Signal(
         order_type=order_type,
