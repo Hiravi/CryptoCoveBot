@@ -46,7 +46,7 @@ async def binance_loop():
 
 
 async def main():
-    await tg_client.start()
+    await tg_client.start(config.PHONE_NUMBER)
     # Launch binance_loop as a separate task
     binance_task = asyncio.create_task(binance_loop())
     try:
