@@ -65,7 +65,7 @@ def parse_message(message):
     targets = extract_numbers(targets_match.group()) if targets_match else None
 
     stop_loss_match = stop_loss_regex.search(message)
-    stop_loss = extract_numbers(stop_loss_match.group()) if stop_loss_match else None
+    stop_loss = float(extract_numbers(stop_loss_match.group())[0]) if stop_loss_match else None
 
     leverage_match = leverage_regex.search(message)
     leverage = leverage_match.group() if leverage_match else None

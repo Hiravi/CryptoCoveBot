@@ -17,6 +17,15 @@ class Signal:
             f"Currency Name: {self.currency_name}"
         )
 
+    def compare(self, symbol, side, open_price, stop_loss):
+        min, max = sorted(self.between)
+        return (
+                self.currency_name == symbol and
+                self.order_type == side and
+                min <= open_price <= max,
+                self.stop_loss == stop_loss
+                )
+
     def is_order(self):
         return (
             self.order_type is not None

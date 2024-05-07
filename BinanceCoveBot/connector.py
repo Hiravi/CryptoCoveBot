@@ -33,9 +33,9 @@ def place_target_orders(client: Client, symbol, side, targets, quantity, precisi
     targeted_asset = 0
     for index, target_price in enumerate(targets):
         if precision == 1:
-            target_quantity = int(round(quantity / len(targets), precision - 1))
+            target_quantity = int(round(quantity / len(targets), precision))
         else:
-            target_quantity = round(quantity / len(targets), precision - 1)
+            target_quantity = round(quantity / len(targets), precision)
         try:
             order = client.new_order(
                 symbol=symbol + 'USDT',
@@ -71,7 +71,13 @@ def new_market_targeted_position(client, order_data: OrderData):
         type='MARKET',
         quantity=order_data.quantity
     )
-    stop_loss_order = place_stop_loss_order(client=client, order_data=order_data)
+    stop_loss_order = place_stop_loss_order(
+        client=client,
+        symbol=order_data.signal.currency_name,
+        side=order_data.signal.order_type,
+        quantity=order_data.quantity,
+        stop_price=order_data.signal.stop_loss,
+    )
     target_orders = place_target_orders(client, order_data.signal.currency_name, order_data.signal.order_type,
                                         order_data.signal.targets, order_data.quantity, order_data.precision)
 
@@ -84,6 +90,7 @@ def new_market_targeted_position(client, order_data: OrderData):
             "target_price": target_price
         }
         targets.append(target)
+
     order_db.store_active_order(
         symbol=order_data.signal.currency_name,
         open_position_order_id=order['orderId'],
@@ -185,19 +192,19 @@ def get_min_notional(info, symbol):
         return None
 
 
-def place_stop_loss_order(client, order_data):
+def place_stop_loss_order(client, symbol, side, quantity, stop_price):
     try:
         order = client.new_order(
-            symbol=order_data.signal.currency_name + 'USDT',
-            side='SELL' if order_data.signal.order_type == 'BUY' else 'BUY',
+            symbol=symbol + 'USDT',
+            side='SELL' if side == 'BUY' else 'BUY',
             type='STOP_MARKET',
-            quantity=order_data.quantity,
-            stopPrice=order_data.signal.stop_loss
+            quantity=quantity,
+            stopPrice=stop_price
         )
 
         return order
     except Exception as e:
-        logging.error("Failed to place stop-loss order:", e)
+        logging.error(f"Failed to place stop-loss order: {e}", e)
         return None
 
 
@@ -212,42 +219,27 @@ def cancel_target_orders(client, remote_order_ids, symbol, targets):
                     logging.error(f"Failed to cancel target order (ID: {target['order_id']}):", e)
 
 
-def modify_stop_loss_order(client, order_id, new_stop_price):
-    """Modifies the stop-loss price of an existing stop-loss order.
-
-    Args:
-        client: The client object connected to the exchange.
-        order_id: The unique ID of the stop-loss order to modify.
-        new_stop_price: The new stop-loss price to set.
-
-    Returns:
-        The modified order object, or None if the modification failed.
-    """
-
+def modify_stop_loss_order(client, symbol, side, order_id, new_stop_price, quantity):
     try:
         # Fetch the existing order details to ensure accuracy
-        original_order = client.get_order(order_id)
+        original_order = client.get_open_orders(symbol=symbol + 'USDT', orderId=order_id)
 
         # Validate that the order is indeed a stop-loss order
-        if original_order.type != 'STOP_MARKET':
+        if original_order['type'] != 'STOP_MARKET':
             raise ValueError("Order is not a stop-loss order.")
 
-        # Check if the exchange supports direct stop-loss modification
-        if hasattr(client, 'modify_order'):
-            # Use the exchange's built-in modification method
-            modified_order = client.modify_order(
-                order_id=order_id,
-                stopPrice=new_stop_price
-            )
-            logging.info(f"Stop-loss order (ID: {order_id}) modified successfully.")
-            return modified_order
-        else:
-            # Cancel and replace the order if direct modification is not supported
-            client.cancel_order(order_id)
-            new_order = place_stop_loss_order(client, original_order)  # Reuse existing order data
-            logging.info(f"Stop-loss order (ID: {order_id}) replaced successfully.")
-            return new_order
+        client.cancel_order(symbol=symbol + 'USDT', orderId=order_id)
+
+        modified_order = place_stop_loss_order(
+            client=client,
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            stop_price=new_stop_price,
+        )
+        logging.info(f"Stop-loss order (ID: {order_id}) modified successfully.")
+        return modified_order
 
     except Exception as e:
-        logging.error("Failed to modify stop-loss order:", e)
+        logging.error(f"Failed to modify stop-loss order: {e}", e)
         return None

@@ -20,9 +20,9 @@ class OrderData:
             if self.precision == 0:
                 quantity = int(round(self.usdt_quantity / self.current_price, 0))
             elif self.precision == 1:
-                quantity = int(round(self.usdt_quantity / self.current_price, self.precision - 1))
+                quantity = int(round(self.usdt_quantity / self.current_price, self.precision))
             else:
-                quantity = round(self.usdt_quantity / self.current_price, self.precision - 1)
+                quantity = round(self.usdt_quantity / self.current_price, self.precision)
 
             return quantity
 
@@ -33,8 +33,8 @@ class OrderData:
             if self.precision == 0:
                 quantity = int(round(self.usdt_quantity / price, 0))
             elif self.precision == 1:
-                quantity = int(round(self.usdt_quantity / price, self.precision - 1))
+                quantity = int(round(self.usdt_quantity / price, self.precision))
             else:
-                quantity = round(self.usdt_quantity / price, self.precision - 1)
+                quantity = round(self.usdt_quantity / price, self.precision)
 
             return quantity

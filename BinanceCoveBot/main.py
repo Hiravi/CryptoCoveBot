@@ -13,7 +13,8 @@ tg_client = TelegramClient(
     'covebot', int(config.API_ID), config.API_HASH,
 )
 client = Client(
-    key=config.BINANCE_API_KEY, secret=config.BINANCE_API_SECRET,
+    key=config.BINANCE_API_KEY,
+    secret=config.BINANCE_API_SECRET,
 )
 
 
@@ -41,7 +42,7 @@ async def binance_loop():
             print(orders)
         except ConnectionError as e:
             logger.error(f"Connection error: {e}")
-        await asyncio.sleep(60)
+        await asyncio.sleep(35)
 
 
 async def main():
@@ -52,8 +53,6 @@ async def main():
         # Run Telegram client until disconnected
         await tg_client.run_until_disconnected()
     finally:
-        # Ensure Telegram client termination even if binance_loop throws errors
-        # Wait for the binance_task to finish
         await binance_task
 
 

@@ -14,27 +14,42 @@ async def handle_message(client, event):
     # Parse the message and extract useful data
     signal = parse_message(event.message.text)
     if signal.is_order():
-        usdt_balance = get_usdt_balance(client=client)
-        usdt_for_order = usdt_balance / 100 * config.PERCENT_FOR_ORDER
-        current_price = get_coin_price(client=client, symbol=signal.currency_name)
+        active_orders = OrderDB().get_active_orders()
 
-        try:
-            info = client.exchange_info()
-            if info is not None:
-                min_notional = get_min_notional(info=info, symbol=signal.currency_name + 'USDT')
-                if min_notional is not None and min_notional <= config.MAX_NOTIONAL:
-                    current_order_data = OrderData(
-                        signal=signal,
-                        usdt_quantity=usdt_for_order,
-                        current_price=current_price,
-                        precision=get_precision(info=info, symbol=signal.currency_name + 'USDT'),
-                    )
-                    if min(signal.between) <= current_price <= max(signal.between):
-                        new_market_targeted_position(client=client, order_data=current_order_data)
-                    else:
-                        new_deferred_targeted_position(client=client, order_data=current_order_data)
-        except Exception as e:
-            logger.error(f"Error in handle_message: {e}")
+        order_handled = None
+        for order in active_orders:
+            if signal.compare(
+                    symbol=order['symbol'],
+                    side=order['open_position_order']['side'],
+                    open_price=order['open_position_order']['open_price'],
+                    stop_loss=order['stop_loss']['value']
+            ):
+                logger.info(f"Such signal already handled!")
+                order_handled = True
+                break
+
+        if order_handled is not True:
+            usdt_balance = get_usdt_balance(client=client)
+            usdt_for_order = usdt_balance / 100 * config.PERCENT_FOR_ORDER
+            current_price = get_coin_price(client=client, symbol=signal.currency_name)
+
+            try:
+                info = client.exchange_info()
+                if info is not None:
+                    min_notional = get_min_notional(info=info, symbol=signal.currency_name + 'USDT')
+                    if min_notional is not None and min_notional <= config.MAX_NOTIONAL:
+                        current_order_data = OrderData(
+                            signal=signal,
+                            usdt_quantity=usdt_for_order,
+                            current_price=current_price,
+                            precision=get_precision(info=info, symbol=signal.currency_name + 'USDT'),
+                        )
+                        if min(signal.between) <= current_price <= max(signal.between):
+                            new_market_targeted_position(client=client, order_data=current_order_data)
+                        else:
+                            new_deferred_targeted_position(client=client, order_data=current_order_data)
+            except Exception as e:
+                logger.error(f"Error in handle_message: {e}")
 
 
 def check_for_updates(client, remote_active_order):
@@ -61,7 +76,7 @@ def check_for_updates(client, remote_active_order):
 
 def handle_filled_stop(client, local_active_orders, remote_order_ids):
     for order in local_active_orders:
-        if order['stop_loss']['order_id'] not in remote_order_ids:
+        if order['stop_loss']['order_id'] is not None and order['stop_loss']['order_id'] not in remote_order_ids:
             try:
                 cancel_target_orders(client, remote_order_ids, order['symbol'], order['targets'])
                 OrderDB().remove_completed_order(order['open_position_order']['order_id'])
@@ -78,9 +93,15 @@ def handle_filled_targets(client, local_active_orders, remote_order_ids):
                 if target['order_id'] not in remote_order_ids and target['status'] == 'placed':
                     try:
                         new_stop_price = order['open_position_order']['open_price'] if index == 0 else \
-                        order['targets'][index - 1]['target_price']
-                        modify_stop_loss_order(client=client, order_id=order['stop_loss']['order_id'],
-                                               new_stop_price=new_stop_price)
+                            order['targets'][index - 1]['target_price']
+                        modify_stop_loss_order(
+                            client=client,
+                            symbol=order['symbol'],
+                            side=order['open_position_order']['side'],
+                            order_id=order['stop_loss']['order_id'],
+                            new_stop_price=new_stop_price,
+                            quantity=order['quantity'],
+                        )
                     except Exception as e:
                         logger.error(f"Error in handle_filled_targets for order {order['symbol']}: {e}")
 
@@ -95,7 +116,14 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
     for order_data in missing_orders:
         if order_data['open_position_order']['status'] != 'filled':
             try:
-                stop_loss_order = place_stop_loss_order(client=client, order_data=order_data)
+                stop_loss_order = place_stop_loss_order(
+                    client=client,
+                    symbol=order_data['symbol'],
+                    side=order_data['open_position_order']['side'],
+                    quantity=order_data['quantity'],
+                    stop_price=order_data['stop_loss']['value']
+                )
+
                 orders_db.modify_stop_loss(order_id=stop_loss_order['orderId'], new_status="placed")
                 order_id = order_data['open_position_order']['order_id']
                 orders_db.modify_order_status(symbol=order_data['symbol'], order_id=int(order_id),
@@ -108,7 +136,11 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
                     position = client.get_position_risk(symbol=current_order['symbol'] + 'USDT')
                 except Exception as e:
                     print(f"An error occurred while getting position risk: {e}")
-                amt = float(position[0]['positionAmt']) if position is not None and amt != 0.0 else 0.0
+
+                if position is not None:
+                    amt = float(position[0]['positionAmt'])
+                else:
+                    amt = 0.0
 
                 if amt != 0.0:
                     target_orders = place_target_orders(
@@ -119,12 +151,12 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
                         quantity=current_order['quantity'],
                         precision=current_order['precision'],
                     )
-                    for target_order in target_orders:
-                        orders_db.modify_order_status(
-                            symbol=order_data['symbol'],
-                            order_id=target_order['orderId'],
-                            order_type='target',
-                            new_status='placed',
-                        )
+
+                    orders_db.update_targets(
+                        order_id=order_data['open_position_order']['order_id'],
+                        new_status='placed',
+                        new_target_ids=[order['orderId'] for order in target_orders]
+                    )
+
             except Exception as e:
                 logger.error(f"Error in handle_entered_positions for order {order_data['symbol']}: {e}")

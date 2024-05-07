@@ -1,9 +1,14 @@
 from datetime import datetime
 from tinydb import TinyDB, Query
+from logging_config import logging
 
 
 class OrderDB:
     _instance = None
+
+    def __init__(self):
+        # Initialize logger
+        self.logger = logging.getLogger('handler')
 
     def __new__(cls):
         if cls._instance is None:
@@ -145,7 +150,7 @@ class OrderDB:
 
         return self.db.get(lambda doc: doc["open_position_order"]["order_id"] == order_id)
 
-    def modify_stop_loss(self, order_id, new_status, new_value=None):
+    def modify_stop_loss(self, order_id, new_status, new_id=None, new_value=None):
         """
         Modify the stop loss value and status of a specific order.
 
@@ -171,10 +176,33 @@ class OrderDB:
                 # If new_value is provided, update the stop loss value
                 if new_value is not None:
                     order['stop_loss']['value'] = new_value
+                if new_id is not None:
+                    order['stop_loss']['order_id'] = new_id
                 # Update the order in the database
-                self.db.update(order, (query.stop_loss.order_id == order_id))
+                self.db.update(order, (query.open_position_order.order_id == order_id))
             except Exception as e:
                 # Handle database update error (log it, notify admin, etc.)
                 print(f"Error modifying stop loss: {e}")
         else:
             print(f"Stop loss with order ID '{order_id}' not found.")
+
+    def update_targets(self, order_id, new_status, new_target_ids=None):
+        order = Query()
+        order_entry = self.db.get(order.open_position_order.order_id == order_id)
+
+        if order_entry:
+            # Update status of open_position_order
+            order_entry['open_position_order']['status'] = new_status
+
+            # Update target_ids if provided
+            if new_target_ids:
+                order_entry['targets'] = [{'order_id': tid, 'status': 'pending', 'target_price': None} for tid in
+                                          new_target_ids]
+
+            # Update the entry in the database
+            self.db.update(order_entry, order.open_position_order.order_id == order_id)
+            self.logger.info("Targets updated successfully. Order ID: %s", order_id)
+            return True
+        else:
+            self.logger.warning("Order ID not found: %s", order_id)
+            return False
