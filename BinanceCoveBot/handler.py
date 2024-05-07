@@ -22,7 +22,7 @@ async def handle_message(client, event):
                     symbol=order['symbol'],
                     side=order['open_position_order']['side'],
                     open_price=order['open_position_order']['open_price'],
-                    stop_loss=order['stop_loss']['value']
+                    stop_loss=order['stop_loss']['value'],
             ):
                 logger.info(f"Such signal already handled!")
                 order_handled = True

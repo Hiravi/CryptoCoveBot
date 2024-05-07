@@ -22,7 +22,7 @@ class Signal:
         return (
                 self.currency_name == symbol and
                 self.order_type == side and
-                min <= open_price <= max,
+                min <= open_price <= max and
                 self.stop_loss == stop_loss
                 )
 
