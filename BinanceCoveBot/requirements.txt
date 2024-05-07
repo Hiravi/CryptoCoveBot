@@ -3,4 +3,5 @@ binance-futures-connector==4.0.0
 pyyaml
 tinydb==4.8.0
 python-dotenv
-
+requests
+tenacity
