@@ -124,7 +124,11 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
                     stop_price=order_data['stop_loss']['value']
                 )
 
-                orders_db.modify_stop_loss(order_id=stop_loss_order['orderId'], new_status="placed")
+                orders_db.modify_stop_loss(
+                    order_id=order_data['open_position_order']['order_id'],
+                    new_status="placed",
+                    new_id=stop_loss_order['orderId'],
+                )
                 order_id = order_data['open_position_order']['order_id']
                 orders_db.modify_order_status(symbol=order_data['symbol'], order_id=int(order_id),
                                               order_type='open_position_order', new_status='filled')
