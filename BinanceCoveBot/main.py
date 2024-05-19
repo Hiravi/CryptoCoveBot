@@ -29,7 +29,10 @@ async def get_balance():
 @tg_client.on(events.NewMessage(chats=int(config.CHANNEL_USERNAME)))
 async def my_event_handler(event):
     print(event.message)
-    await handle_message(client, event)
+    try:
+        await handle_message(client, event)
+    except Exception as e:
+        print(f"Error in handle_message: {e}")
 
 
 async def binance_loop():
@@ -38,11 +41,11 @@ async def binance_loop():
             balance = await get_balance()
             print(balance)
             orders = client.get_orders()
-            check_for_updates(client=client, remote_active_order=orders)
+            check_for_updates(client=client, remote_active_orders=orders)
             print(orders)
         except ConnectionError as e:
             logger.error(f"Connection error: {e}")
-        await asyncio.sleep(35)
+        await asyncio.sleep(10)
 
 
 async def main():

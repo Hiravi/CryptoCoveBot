@@ -1,5 +1,6 @@
 from order_data import OrderData
 from binance.um_futures import UMFutures as Client
+from binance.error import ClientError
 from orders_database import OrderDB
 from logging_config import logging
 
@@ -32,7 +33,7 @@ def place_target_orders(client: Client, symbol, side, targets, quantity, precisi
     placed_orders = []
     targeted_asset = 0
     for index, target_price in enumerate(targets):
-        if precision == 1:
+        if precision == 0:
             target_quantity = int(round(quantity / len(targets), precision))
         else:
             target_quantity = round(quantity / len(targets), precision)
@@ -48,8 +49,28 @@ def place_target_orders(client: Client, symbol, side, targets, quantity, precisi
 
             placed_orders.append(order)
             targeted_asset += target_quantity
+            logging.info(f"TP order placed for symbol {symbol}: {order}")
         except Exception as e:
             logging.error(f"Error placing target order {index + 1} for {symbol}: {e}")
+        except ClientError as e:
+            # Check for specific error code
+            if e.error_code == -2021 and "Order would immediately trigger." in str(e):
+                try:
+                    order = client.new_order(
+                        symbol=symbol + 'USDT',
+                        side='SELL' if side == 'BUY' else 'BUY',
+                        type='MARKET',
+                        quantity=target_quantity if index < len(targets) - 1 else round(quantity - targeted_asset, 3),
+                    )
+
+                    logging.warning(
+                        f"Target price {target_price} for {symbol} might be too close to current market price. Place.")
+                except Exception as e:
+                    # Handle other ClientErrors
+                    logging.error(f"Error placing target order {index + 1} for {symbol}: {e}")
+            else:
+                # Handle other ClientErrors
+                logging.error(f"Error placing target order {index + 1} for {symbol}: {e}")
     return placed_orders
 
 
@@ -95,7 +116,7 @@ def new_market_targeted_position(client, order_data: OrderData):
     order_db.store_active_order(
         symbol=order_data.signal.currency_name,
         open_position_order_id=order['orderId'],
-        open_position_order_status='placed',
+        open_position_order_status='filled',
         open_position_side=order_data.signal.order_type,
         targets=targets,
         stop_loss_id=stop_loss_order['orderId'],
@@ -105,6 +126,8 @@ def new_market_targeted_position(client, order_data: OrderData):
         quantity=float(order_data.quantity),
         open_price=order_data.current_price,
     )
+
+    logging.info(f"Order {order['orderId']} placed as market order")
 
 
 def new_deferred_targeted_position(client, order_data: OrderData):
@@ -117,7 +140,7 @@ def new_deferred_targeted_position(client, order_data: OrderData):
         client.change_margin_type(symbol=order_data.signal.currency_name + 'USDT', marginType='ISOLATED')
     except Exception as e:  # Catch any error during margin type change
         if 'No need to change margin type.' in str(e):
-            print("Margin type is already set to ISOLATED. No need to change.")
+            logging.info("Margin type is already set to ISOLATED. No need to change.")
         else:
             logging.error(f"Error changing margin type: {e}")
 
@@ -160,6 +183,8 @@ def new_deferred_targeted_position(client, order_data: OrderData):
         quantity=float(order_data.quantity),
         open_price=entry_price,
     )
+
+    logging.info(f"Order {order['orderId']} placed as deferred order")
 
 
 def get_precision(info, symbol):
@@ -204,9 +229,12 @@ def place_stop_loss_order(client, symbol, side, quantity, stop_price):
         )
 
         return order
-    except Exception as e:
-        logging.error(f"Failed to place stop-loss order: {e}", e)
-        return None
+    except ClientError as e:
+        if e.error_code == -2021:  # Handle specific error code for immediate trigger
+            logging.error(
+                f"Stop-loss order not placed because price already reached stop price ({stop_price}) for {symbol}.")
+        else:
+            logging.error(f"Failed to place stop-loss order: {e}", e)
 
 
 def cancel_target_orders(client, remote_order_ids, symbol, targets):
@@ -220,8 +248,19 @@ def cancel_target_orders(client, remote_order_ids, symbol, targets):
                     logging.error(f"Failed to cancel target order (ID: {target['order_id']}):", e)
 
 
-def modify_stop_loss_order(client, symbol, side, order_id, new_stop_price, quantity):
+def cancel_expired_order(client, order):
+    symbol = order['symbol']
+
     try:
+        client.cancel_order(symbol=symbol + 'USDT', orderId=order['open_position_order']['order_id'])
+
+    except Exception as e:
+        logging.error(f"Failed to cancel expired order (ID: {order['open_position_order']['order_id']}. Cause: {e}")
+
+
+def modify_stop_loss_order(client, symbol, side, order, new_stop_price, quantity):
+    try:
+        order_id = order['stop_loss']['order_id']
         # Fetch the existing order details to ensure accuracy
         original_order = client.get_open_orders(symbol=symbol + 'USDT', orderId=order_id)
 
@@ -238,6 +277,9 @@ def modify_stop_loss_order(client, symbol, side, order_id, new_stop_price, quant
             quantity=quantity,
             stop_price=new_stop_price,
         )
+
+        OrderDB().modify_stop_loss(order['open_position_order']['order_id'], 'placed', new_id=modified_order['orderId'], new_value=new_stop_price)
+
         logging.info(f"Stop-loss order (ID: {order_id}) modified successfully.")
         return modified_order
 

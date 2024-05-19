@@ -24,4 +24,4 @@ regex:
   targets: '({target_word})[^a-zA-Z]*([a-zA-Z])'
   stop_loss: '({target_word})[^a-zA-Z]*([a-zA-Z])'
   leverage: "({target_word})[\\s:]*([\\d\\-x]+)"
-  currency_name: '\b([A-Z]{3,})\b'
+  currency_name: '\b([A-Z\d]+)\b'

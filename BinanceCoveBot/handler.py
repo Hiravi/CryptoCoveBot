@@ -1,6 +1,6 @@
 from connector import get_usdt_balance, get_coin_price, new_market_targeted_position, new_deferred_targeted_position, \
     get_precision, place_target_orders, modify_stop_loss_order, cancel_target_orders, get_min_notional, \
-    place_stop_loss_order
+    place_stop_loss_order, cancel_expired_order
 from parser import parse_message
 from order_data import OrderData
 from orders_database import OrderDB
@@ -48,11 +48,31 @@ async def handle_message(client, event):
                             new_market_targeted_position(client=client, order_data=current_order_data)
                         else:
                             new_deferred_targeted_position(client=client, order_data=current_order_data)
+                    else:
+                        logger.info(f":Min notional is {min_notional}")
+
             except Exception as e:
                 logger.error(f"Error in handle_message: {e}")
 
 
-def check_for_updates(client, remote_active_order):
+def handle_expired_orders(client, active_orders):
+    for order in active_orders:
+        current_price = get_coin_price(client=client, symbol=order['symbol'])
+
+        if order['open_position_order']['status'] == 'placed' and current_price > order['targets'][0]['target_price']:
+
+            try:
+                cancel_expired_order(
+                    client=client,
+                    order=order,
+                )
+
+                OrderDB().remove_completed_order(order['open_position_order']['order_id'])
+            except Exception as e:
+                logger.error(f"Error in handle_message: {e}")
+
+
+def check_for_updates(client, remote_active_orders):
     orders_db = OrderDB()
     local_active_orders = orders_db.get_active_orders()
 
@@ -60,13 +80,19 @@ def check_for_updates(client, remote_active_order):
     open_position_orders = []
     for order in local_active_orders:
         open_position_orders.append(order)
-    remote_order_ids = [order['orderId'] for order in remote_active_order]
+    remote_order_ids = [order['orderId'] for order in remote_active_orders]
 
     if local_active_orders and open_position_orders:
         try:
             handle_filled_stop(client, local_active_orders, remote_order_ids)
             handle_entered_positions(client, open_position_orders, remote_order_ids)
             handle_filled_targets(client, local_active_orders, remote_order_ids)
+
+            open_position_orders = []
+            for order in local_active_orders:
+                open_position_orders.append(order)
+
+            handle_expired_orders(client, open_position_orders)
         except Exception as e:
             logger.error(f"Error in check_for_updates: {e}")
 
@@ -85,23 +111,30 @@ def handle_filled_stop(client, local_active_orders, remote_order_ids):
 
 
 def handle_filled_targets(client, local_active_orders, remote_order_ids):
+    order_db = OrderDB()
+
     for order in local_active_orders:
-        if all(target == 'filled' for target in order['targets']):
-            OrderDB().remove_completed_order(order)
+        if all(target['status'] == 'filled' for target in order['targets']):
+            order_db.remove_completed_order(order)
         else:
             for index, target in enumerate(order['targets']):
                 if target['order_id'] not in remote_order_ids and target['status'] == 'placed':
                     try:
-                        new_stop_price = order['open_position_order']['open_price'] if index == 0 else \
-                            order['targets'][index - 1]['target_price']
+
+                        position = client.get_position_risk(symbol=order['symbol'] + 'USDT')
+                        new_amt = float(position[0]['positionAmt'])
+
+                        new_stop_price = order['open_position_order']['open_price'] if index == 0 else order['targets'][index - 1]['target_price']
                         modify_stop_loss_order(
                             client=client,
                             symbol=order['symbol'],
                             side=order['open_position_order']['side'],
-                            order_id=order['stop_loss']['order_id'],
+                            order=order,
                             new_stop_price=new_stop_price,
-                            quantity=order['quantity'],
+                            quantity=new_amt,
                         )
+                        order_db.update_target_status(order['open_position_order']['order_id'], index, 'filled')
+
                     except Exception as e:
                         logger.error(f"Error in handle_filled_targets for order {order['symbol']}: {e}")
 
@@ -116,6 +149,10 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
     for order_data in missing_orders:
         if order_data['open_position_order']['status'] != 'filled':
             try:
+                order_id = order_data['open_position_order']['order_id']
+                orders_db.modify_order_status(symbol=order_data['symbol'], order_id=int(order_id),
+                                              order_type='open_position_order', new_status='filled')
+
                 stop_loss_order = place_stop_loss_order(
                     client=client,
                     symbol=order_data['symbol'],
@@ -129,9 +166,6 @@ def handle_entered_positions(client, open_position_orders, remote_order_ids):
                     new_status="placed",
                     new_id=stop_loss_order['orderId'],
                 )
-                order_id = order_data['open_position_order']['order_id']
-                orders_db.modify_order_status(symbol=order_data['symbol'], order_id=int(order_id),
-                                              order_type='open_position_order', new_status='filled')
 
                 # Place target orders
                 current_order = orders_db.get_order_by_id(order_id=order_id)

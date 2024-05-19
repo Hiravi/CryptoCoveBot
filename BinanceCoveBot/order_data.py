@@ -20,7 +20,7 @@ class OrderData:
             if self.precision == 0:
                 quantity = int(round(self.usdt_quantity / self.current_price, 0))
             elif self.precision == 1:
-                quantity = int(round(self.usdt_quantity / self.current_price, self.precision))
+                quantity = round(self.usdt_quantity / self.current_price, self.precision)
             else:
                 quantity = round(self.usdt_quantity / self.current_price, self.precision)
 
